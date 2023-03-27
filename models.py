@@ -47,7 +47,11 @@ class UnifiedModel(nn.Module):
 
     def forward(self, language_model_out, video_classifier_out, audio_classifier_out):
         """
-            Description: 
+            Description: Forward function takes language model output , video_classifier output and audio_classifier output
+
+            @param language_model_out: the final layer flattened output of language_model
+            @param video_classifier_out: the final layer flattened output of video classifier model
+            @param audio_classifier_out: the final layer flattened output of audio classifier model (spectrogram classifier)
         """
         x = torch.cat((language_model_out, video_classifier_out, audio_classifier_out), axis=-1)
         x = self.linear1(x)
