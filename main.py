@@ -24,7 +24,8 @@ def get_train_val_split_samplers(root_dir, split_pct=0.2):
     val_sampler = SubsetRandomSampler(val_indices)
     return train_sampler, val_sampler
 
-def train_val(unifiedmodel_obj, optimizer, train_dataloader, val_dataloader, n_epochs, batch_size, print_every, experiment_path):
+def train_val(**train_val_arg_dict):
+    unifiedmodel_obj, optimizer, train_dataloader, val_dataloader, n_epochs, batch_size, print_every, experiment_path = train_val_arg_dict.values()
     runs_dir = os.path.join(experiment_path,'runs')
     writer = SummaryWriter(runs_dir)
     train_losses = list()
@@ -139,7 +140,7 @@ if __name__=='__main__':
     TokenizeText_obj = TokenizeText()
 
     ##Model init
-    #LanguageModel_obj = LanguageModel() @Shaunak
+    LanguageModel_obj = LanguageModel(model_name=language_model_name)
     #VideModel_obj = VideModel() @Raghav
     #AudioModel_obj = AudioModel() @Joon
     #in_dims = TBD
@@ -167,8 +168,17 @@ if __name__=='__main__':
 
     print('Training on \n train:{} batches \n val:{} batches'.format(len(train_dataloader), len(val_dataloader)))
 
-
-    train_val()
+    train_val_arg_dict = {
+        'unifiedmodel_obj':unifiedmodel_obj, 
+        'optimizer':optimizer,
+        'train_dataloader':train_dataloader,
+        'val_dataloader':val_dataloader,
+        'n_epochs':n_epochs,
+        'batch_size':batch_size,
+        'print_every':print_every,
+        'experiment_path':experiment_path
+    }
+    train_val(train_val_arg_dict)
 
 
 
