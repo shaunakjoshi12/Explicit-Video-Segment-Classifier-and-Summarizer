@@ -2,10 +2,9 @@ import os
 import glob
 from torch.utils.data import Dataset
 
-#@Raghav refer to torchhub notebook
 
 class VideoClipDataset(Dataset):
-    def __init__(self, **dataset_dict):#):video_paths=None, root_dir_path=None, EncodeAndTransformedVideo_obj=None, GetSpectrogramFromAudio_obj=None, GetTextFromAudio_obj=None, TokenizeText_obj=None): 
+    def __init__(self, **dataset_dict):
         """
             Description: A unified dataset for all the modalities i.e. video, text and audio
 
