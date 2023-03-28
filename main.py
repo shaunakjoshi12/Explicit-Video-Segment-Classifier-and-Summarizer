@@ -137,7 +137,7 @@ if __name__=='__main__':
     ##Functions to transform modalities
     #EncodeAndTransformedVideo_obj = EncodeAndTransformedVideo() @Raghav
     #GetSpectrogramFromAudio_obj = GetSpectrogramFromAudio() @Arpita
-    #GetTextFromAudio_obj = GetTextFromAudio() @Joon
+    GetTextFromAudio_obj = GetTextFromAudio()
     TokenizeText_obj = TokenizeText()
 
     ##Model init
