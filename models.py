@@ -84,7 +84,6 @@ if __name__ == '__main__':
     inputs = tokenizer(text, return_tensors="pt")    
 
     with torch.no_grad():
-        #pdb.set_trace()
         out_ = llm(inputs)
         print(out_.size())
 
