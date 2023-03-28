@@ -26,7 +26,7 @@ class VideoClipDataset(Dataset):
         video = self.videos[i]
         transformed_video = self.EncodeAndTransformedVideo_obj.get_video(video) #get_video (or any func name): function defined by Raghav in his class to get the encoded and transformed video
         processed_spectrogram = self.GetSpectrogramFromAudio_obj.get_spectrogram(video) #get_spectrogram (or any func name): function defined by Arpita in her class to get the spectrogram
-        processed_speech = self.TokenizeText_obj.get_token_tensor(GetTextFromAudio_obj.get_speech(video)) #get_speech (or any func name): function defined by Joon in his class to get the transcribed speech
+        processed_speech = self.TokenizeText_obj.tokenize(GetTextFromAudio_obj.get_speech(video)) #get_speech (or any func name): function defined by Joon in his class to get the transcribed speech
         #get_token_tensor: function defined by Shaunak in his class to get the token tensor from the transcribed speech
 
         return transformed_video, processed_spectrogram, processed_speech, self.classes[video.split('/')[-2]]

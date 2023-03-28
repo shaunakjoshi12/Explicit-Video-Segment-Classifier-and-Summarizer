@@ -1,6 +1,5 @@
 import torch, pdb
 import torch.nn as nn
-from transformers import AutoTokenizer
 from transformers import AutoModelForSequenceClassification
 
 #class VideoModel(nn.Module):
@@ -10,7 +9,7 @@ from transformers import AutoModelForSequenceClassification
 #@TODO #@Arpita define your class which does 1. Takes input as processed_spectrogram tensor from dataset I have defined and returns the pre-final layer from audioclassifier
 
 class LanguageModel(nn.Module):
-    def __init__(self, model_name="bert-base-uncased", output_attentions=True):
+    def __init__(self, model_name="distilbert-base-uncased", output_attentions=True):
         """
             Description: Language model which takes input as processed_speech from dataset I have defined and gives the final attention layers as output
             @param model_name: Pretrained model name
@@ -57,6 +56,7 @@ class UnifiedModel(nn.Module):
         self.AudioModel_obj = AudioModel_obj
         self.linear1 = nn.Linear(self.in_dims, self.intermediate_dim)
         self.linear2 = nn.Linear(self.intermediate_dim, self.num_classes)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, language_model_in, video_classifier_in, audio_classifier_in):
         """
@@ -73,6 +73,7 @@ class UnifiedModel(nn.Module):
         x = torch.cat((language_model_out, video_classifier_out, audio_classifier_out), axis=-1)
         x = self.linear1(x)
         x = self.linear2(x)
+        x = self.sigmoid(x)
         return x
 
 

@@ -12,6 +12,7 @@ from text_utils import GetTextFromAudio
 from video_utils import EncodeAndTransformedVideo
 from audio_utils import GetSpectrogramFromAudio
 from torch.utils.data import SubsetRandomSampler
+from torch.utils.tensorboard import SummaryWriter
 
 def get_train_val_split_samplers(root_dir, split_pct=0.2):
     all_videos = glob.glob(os.path.join(root_dir,'*/*'))
@@ -23,9 +24,76 @@ def get_train_val_split_samplers(root_dir, split_pct=0.2):
     val_sampler = SubsetRandomSampler(val_indices)
     return train_sampler, val_sampler
 
-#def train_val():
+def train_val(unifiedmodel_obj, optimizer, train_dataloader, val_dataloader, n_epochs, batch_size, print_every, experiment_path):
+    runs_dir = os.path.join(experiment_path,'runs')
+    writer = SummaryWriter(runs_dir)
+    train_losses = list()
+    val_losses = list()
+    loss_ = nn.BCELoss()
+    best_loss = float('inf')
+    sigmoid_threshold = 0.5
 
-#def val():
+    for epoch in range(n_epochs):
+        #train
+        print('\n\n Epoch: {}'.format(epoch+1))
+        print('\n Train')
+        epoch_loss_train=0
+        correct_train_preds = 0
+        unifiedmodel_obj.train()
+        for i, modality_inputs in enumerate(train_dataloader):
+            transformed_video, processed_spectrogram, processed_speech, target = modality_inputs
+            optimizer.zero_grad()
+            predictions = unifiedmodel_obj(modality_inputs)
+            batch_loss = loss_(predictions, target)
+            batch_loss.backward()
+            optimizer.step()
+            predictions = predictions.cpu().detach()
+            target = target.cpu().detach()
+            predictions[predictions > 0.5] = 1
+            predictions[predictions <= 0.5] = 0
+            num_correct_preds = (predictions==target).sum()
+            correct_train_preds+=num_correct_preds
+            epoch_loss_train+=batch_loss.cpu().detach().item()
+            writer.add_scalar("Loss/train", epoch_loss_train/(i+1), epoch)
+
+            if i % print_every == 0:
+                print('Batch:{}, Train epoch loss average:{} and accuracy till now:{}'.format(i+1, epoch_loss_train/(i+1), correct_train_preds/((i+1)*batch_size)))
+
+        average_train_loss_per_epoch = epoch_loss_train/len(train_dataloader)
+        print('For epoch:{} the average train loss: {} and the accuracy: {}'.format(epoch+1, average_train_loss_per_epoch, correct_train_preds/(len(train_dataloader)*batch_size)))
+        train_losses.append(average_train_loss_per_epoch)
+
+        #Val
+        print('\n Val')
+        unifiedmodel_obj.eval()
+        epoch_loss_val=0
+        correct_val_preds = 0
+        for i, modality_inputs in enumerate(val_dataloader):
+            with torch.no_grad():
+                transformed_video, processed_spectrogram, processed_speech, target = modality_inputs
+                predictions = unifiedmodel_obj(modality_inputs)
+                batch_loss = loss_(predictions, target)
+                predictions[predictions > 0.5] = 1
+                predictions[predictions <= 0.5] = 0
+                num_correct_preds = (predictions==target).sum()
+                correct_val_preds+=num_correct_preds
+                epoch_loss_val+=batch_loss
+                writer.add_scalar("Loss/val", epoch_loss_val/(i+1), epoch)
+
+            if i % print_every == 0:
+                print('Batch:{}, Val epoch loss average:{}'.format(i+1, epoch_loss_val/(i+1)))
+
+        average_val_loss_per_epoch = epoch_loss_val/len(val_dataloader)
+        print('For epoch:{} the average val loss: {} and the accuracy:{}'.format(epoch+1, average_val_loss_per_epoch, correct_preds/(len(val_dataloader)*batch_size)))
+        val_losses.append(average_val_loss_per_epoch)
+
+        if average_val_loss_per_epoch < best_loss:
+            best_loss = average_val_loss_per_epoch
+            torch.save(unifiedmodel_obj.state_dict(), os.path.join(experiment_path, 'best_checkpoint.pth'))
+    writer.flush()
+
+
+
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--n_epochs',type=int)
@@ -35,6 +103,9 @@ if __name__=='__main__':
     parser.add_argument('--language_model_name', type=str,description='path to the fine-tuned model OR huggingface pretrained model name')
     parser.add_argument('--video_model_name', type=str,description='path to the fine-tuned model OR pretrained model name') #Optional
     parser.add_argument('--audio_model_name', type=str,description='path to the fine-tuned model OR pretrained model name') #Optional
+    parser.add_argument('--experiment_path',type=str)
+    parser.add_argument('--batch_size',type=int)
+    parser.add_argument('--print_every',type=int)
     args = parser.parse_args()
 
     n_epochs = args.epochs
@@ -43,6 +114,12 @@ if __name__=='__main__':
     language_model_name = args.language_model_name
     video_model_name = audio_model_name = language_model_name = None
     optimizer_name = args.optimizer_name
+    print_every = args.print_every
+    experiment_path = args.experiment_path
+    batch_size = args.batch_size
+
+    if not os.path.exists(experiment_path):
+        os.makedirs(experiment_path)
 
     if args.video_model_name:
         video_model_name = args.video_model_name
@@ -59,7 +136,7 @@ if __name__=='__main__':
     #EncodeAndTransformedVideo_obj = EncodeAndTransformedVideo() @Raghav
     #GetSpectrogramFromAudio_obj = GetSpectrogramFromAudio() @Arpita
     #GetTextFromAudio_obj = GetTextFromAudio() @Joon
-    #TokenizeText_obj = TokenizeText() @Shaunak
+    TokenizeText_obj = TokenizeText()
 
     ##Model init
     #LanguageModel_obj = LanguageModel() @Shaunak
@@ -89,6 +166,7 @@ if __name__=='__main__':
     DataLoader(VideoClipDataset(dataset_dict), shuffle=False, batch_size=batch_size, sampler=val_sampler)
 
     print('Training on \n train:{} batches \n val:{} batches'.format(len(train_dataloader), len(val_dataloader)))
+
 
     train_val()
 
