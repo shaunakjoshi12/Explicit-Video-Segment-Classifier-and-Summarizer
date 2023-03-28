@@ -7,8 +7,9 @@ import torch.nn as nn
 from models import *
 from torch.optim import SGD, Adam
 from dataset import VideoClipDataset
+from models import LanguageModel, UnifiedModel
 from torch.utils.data import DataLoader
-from text_utils import GetTextFromAudio
+from text_utils import GetTextFromAudio, TokenizeText
 from video_utils import EncodeAndTransformedVideo
 from audio_utils import GetSpectrogramFromAudio
 from torch.utils.data import SubsetRandomSampler
@@ -163,7 +164,7 @@ if __name__=='__main__':
     }
 
 
-    train_dataloader, val_dataloader = DataLoader(VideoClipDataset(train_dataset_dict), shuffle=False, batch_size=batch_size, sampler=train_sampler),\
+    train_dataloader, val_dataloader = DataLoader(VideoClipDataset(dataset_dict), shuffle=False, batch_size=batch_size, sampler=train_sampler),\
     DataLoader(VideoClipDataset(dataset_dict), shuffle=False, batch_size=batch_size, sampler=val_sampler)
 
     print('Training on \n train:{} batches \n val:{} batches'.format(len(train_dataloader), len(val_dataloader)))
