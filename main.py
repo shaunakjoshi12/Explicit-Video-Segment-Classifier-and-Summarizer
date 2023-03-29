@@ -10,7 +10,8 @@ from dataset import VideoClipDataset
 from models import LanguageModel, UnifiedModel
 from torch.utils.data import DataLoader
 from text_utils import GetTextFromAudio, TokenizeText
-from video_utils import EncodeAndTransformedVideo
+from video_utils import EncodeVideo
+from models import VideoModel
 from audio_utils import GetSpectrogramFromAudio
 from torch.utils.data import SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
@@ -135,14 +136,14 @@ if __name__=='__main__':
     train_sampler, val_sampler = get_train_val_split_samplers(root_dir)
 
     ##Functions to transform modalities
-    #EncodeAndTransformedVideo_obj = EncodeAndTransformedVideo() @Raghav
+    EncodeVideo_obj = EncodeVideo() 
     #GetSpectrogramFromAudio_obj = GetSpectrogramFromAudio() @Arpita
     GetTextFromAudio_obj = GetTextFromAudio()
     TokenizeText_obj = TokenizeText()
 
     ##Model init
     LanguageModel_obj = LanguageModel(model_name=language_model_name)
-    #VideModel_obj = VideModel() @Raghav
+    VideoModel_obj = VideoModel()
     #AudioModel_obj = AudioModel() @Joon
     #in_dims = TBD
     #intermediate_dims = TBD
@@ -157,7 +158,7 @@ if __name__=='__main__':
     dataset_dict = {
         'all_videos':all_videos,
         'root_dir_path':root_dir_path,
-        'EncodeAndTransformedVideo_obj':EncodeAndTransformedVideo_obj,
+        'EncodeVideo_obj':EncodeVideo_obj,
         'GetSpectrogramFromAudio_obj':GetSpectrogramFromAudio_obj,
         'GetTextFromAudio_obj':GetTextFromAudio_obj,
         'TokenizeText_obj':TokenizeText_obj

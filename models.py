@@ -4,6 +4,16 @@ from transformers import AutoModelForSequenceClassification
 
 #class VideoModel(nn.Module):
 #@TODO #@Raghav define your class which does 1. Takes input as transformed_video tensor from dataset I have defined and returns the pre-final layer from videoclassifier
+class VideoModel(nn.Module):
+    def __init__(self, model_name='slowfast_r50', pretrained=True) -> None:
+        super().__init__()
+
+        self.model = torch.hub.load('facebookresearch/pytorchvideo', 'slowfast_r50', pretrained=True)
+
+    def forward(self, x):
+        pred = self.model(x)
+
+        return pred
 
 #class AudioModel(nn.Module):
 #@TODO #@Arpita define your class which does 1. Takes input as processed_spectrogram tensor from dataset I have defined and returns the pre-final layer from audioclassifier
