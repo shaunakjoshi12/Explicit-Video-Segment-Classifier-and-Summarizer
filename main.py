@@ -1,8 +1,11 @@
 import os
+import pdb
 import torch
+import pickle
 import glob
 import argparse
 import numpy as np
+from data_utils import *
 import torch.nn as nn
 from models import *
 from torch.optim import SGD, Adam
@@ -16,15 +19,26 @@ from audio_utils import GetSpectrogramFromAudio
 from torch.utils.data import SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 
-def get_train_val_split_samplers(root_dir, split_pct=0.2):
-    all_videos = glob.glob(os.path.join(root_dir,'*/*'))
-    indices = range(len(all_videos))
-    np.random.shuffle(indices)
-    val_split_index = int(len(all_videos)*split_pct)
-    val_indices, train_indices = indices[:val_split_index], indices[val_split_index:]
-    train_sampler = SubsetRandomSampler(train_indices)
-    val_sampler = SubsetRandomSampler(val_indices)
-    return train_sampler, val_sampler
+
+def get_train_val_split_videos(root_dir, split_pct=0.2):
+    #Split explicit_train_val videos
+    explicit_videos = glob.glob(os.path.join(root_dir,'explicit/*'))
+    explicit_indices = range(len(explicit_videos))
+    np.random.shuffle(explicit_indices)
+    explicit_val_split_index = int(len(explicit_videos)*split_pct)
+    explicit_videos_val,  explicit_videos_train = explicit_indices[:explicit_val_split_index], explicit_indices[explicit_val_split_index:]
+
+    #Split non_explicit_train_val videos
+    non_explicit_videos = glob.glob(os.path.join(root_dir,'non_explicit/*'))    
+    non_explicit_indices = range(len(non_explicit_videos))
+    np.random.shuffle(non_explicit_indices)
+    non_explicit_val_split_index = int(len(non_explicit_videos)*split_pct)
+    non_explicit_videos_val,  non_explicit_videos_train = non_explicit_indices[:non_explicit_val_split_index], non_explicit_indices[non_explicit_val_split_index:]
+
+    #Get the total train_val videos
+    train_videos, val_videos = explicit_videos_train+non_explicit_videos_train, explicit_videos_val+non_explicit_videos_val
+    return train_videos, val_videos
+
 
 def train_val(**train_val_arg_dict):
     unifiedmodel_obj, optimizer, train_dataloader, val_dataloader, n_epochs, batch_size, print_every, experiment_path = train_val_arg_dict.values()
@@ -121,8 +135,7 @@ if __name__=='__main__':
     experiment_path = args.experiment_path
     batch_size = args.batch_size
 
-    if not os.path.exists(experiment_path):
-        os.makedirs(experiment_path)
+    makedir(experiment_path)
 
     if args.video_model_name:
         video_model_name = args.video_model_name
@@ -133,7 +146,7 @@ if __name__=='__main__':
     if args.audio_model_name:
         audio_model_name = args.audio_model_name
 
-    train_sampler, val_sampler = get_train_val_split_samplers(root_dir)
+    train_videos, val_videos = get_train_val_split_videos(root_dir)
 
     ##Functions to transform modalities
     EncodeVideo_obj = EncodeVideo() 
@@ -145,28 +158,35 @@ if __name__=='__main__':
     LanguageModel_obj = LanguageModel(model_name=language_model_name)
     VideoModel_obj = VideoModel()
     #AudioModel_obj = AudioModel() @Joon
-    #in_dims = TBD
-    #intermediate_dims = TBD
-    #UnifiedModel_obj = UnifiedModel(in_dims, intermediate_dim, LanguageModel_obj, VideModel_obj, AudioModel_obj)
+    in_dims = 2000
+    intermediate_dims = 100
+    UnifiedModel_obj = UnifiedModel(in_dims, intermediate_dim, LanguageModel_obj, VideModel_obj, AudioModel_obj)
 
     if optimizer_name in ['SGD','sgd']:
         optimizer = SGD(UnifiedModel_obj.parameters(), lr=learning_rate, momentum=0.9)
     elif optimizer_name in ['Adam','adam']:
         optimizer = Adam(UnifiedModel_obj.parameters(), lr=learning_rate)
 
-    all_videos = glob.glob(os.path.join(root_dir,'*/*'))
-    dataset_dict = {
-        'all_videos':all_videos,
-        'root_dir_path':root_dir_path,
-        'EncodeVideo_obj':EncodeVideo_obj,
-        'GetSpectrogramFromAudio_obj':GetSpectrogramFromAudio_obj,
-        'GetTextFromAudio_obj':GetTextFromAudio_obj,
-        'TokenizeText_obj':TokenizeText_obj
+    all_videos = glob.glob(os.path.join(root_dir,'processed_data/non_encoded_videos/*/*'))
+    encoded_videos_path = os.path.join(root_dir,'processed_data/encoded_videos')
+    if not os.path.exists(encoded_videos_path):
+        encode_videos(all_videos, encoded_videos_path, EncodeVideo_obj, GetTextFromAudio_obj, TokenizeText_obj)    
+    
+    train_encoded_videos, val_encoded_videos = get_train_val_split_videos(encoded_videos_path)
+    train_dataset_dict = {
+        'root_dir':root_dir,
+        'all_videos':train_encoded_videos,
+    }
+
+    val_dataset_dict = {
+        'root_dir':root_dir,
+        'all_videos':val_encoded_videos,
     }
 
 
-    train_dataloader, val_dataloader = DataLoader(VideoClipDataset(dataset_dict), shuffle=False, batch_size=batch_size, sampler=train_sampler),\
-    DataLoader(VideoClipDataset(dataset_dict), shuffle=False, batch_size=batch_size, sampler=val_sampler)
+
+    train_dataloader, val_dataloader = DataLoader(VideoClipDataset(train_dataset_dict), shuffle=True, batch_size=batch_size),\
+    DataLoader(VideoClipDataset(val_dataset_dict), shuffle=True, batch_size=batch_size)
 
     print('Training on \n train:{} batches \n val:{} batches'.format(len(train_dataloader), len(val_dataloader)))
 

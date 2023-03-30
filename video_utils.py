@@ -1,13 +1,11 @@
 #class EncodeAndTransformedVideo:
 
+import os
+import glob
 import torch
 # Choose the `slowfast_r50` model 
-model = torch.hub.load('facebookresearch/pytorchvideo', 'slowfast_r50', pretrained=True)
-# Set to GPU or CPU
-device = "cpu"
-model = model.eval()
-model = model.to(device)
 
+from tqdm import tqdm
 from typing import Dict
 import json
 import urllib
@@ -28,8 +26,9 @@ class PackPathway(torch.nn.Module):
         """
         Transform for converting video frames as a list of tensors. 
         """
-        def __init__(self):
+        def __init__(self, slowfast_alpha):
             super().__init__()
+            self.slowfast_alpha = slowfast_alpha
 
         def forward(self, frames: torch.Tensor):
             fast_pathway = frames
@@ -38,7 +37,7 @@ class PackPathway(torch.nn.Module):
                 frames,
                 1,
                 torch.linspace(
-                    0, frames.shape[1] - 1, frames.shape[1] // slowfast_alpha
+                    0, frames.shape[1] - 1, frames.shape[1] // self.slowfast_alpha
                 ).long(),
             )
             frame_list = [slow_pathway, fast_pathway]
@@ -62,36 +61,50 @@ class EncodeVideo:
         key="video",
         transform=Compose(
             [
-                UniformTemporalSubsample(self.num_frames),
+                #UniformTemporalSubsample(self.num_frames),
                 Lambda(lambda x: x/255.0),
                 NormalizeVideo(self.mean, self.std),
                 ShortSideScale(
                     size=self.side_size
                 ),
-                CenterCropVideo(self.crop_size),
-                PackPathway()
-            ]),)
+                #CenterCropVideo(self.crop_size),
+                PackPathway(self.slowfast_alpha)
+            ]),)#.to(torch.device('cuda'))
         
         self.clip_duration = (self.num_frames * self.sampling_rate)/self.frames_per_second
+
     
         # Select the duration of the clip to load by specifying the start and end duration
         # The start_sec should correspond to where the action occurs in the video
         self.start_sec = 0
         self.end_sec = self.start_sec + self.clip_duration
 
-
-        def get_output(self, video_path):
-
+    def get_video(self, video_path, device=torch.device('cpu')):
             video = EncodedVideo.from_path(video_path)
-
+            # print(video_path)
+            # print("video_encoded")
+            # print(self.end_sec)
+            end_sec = video.duration            
             # Load the desired clip
-            video_data = video.get_clip(start_sec=self.start_sec, end_sec=self.end_sec)
-
+            ##video_data = video.get_clip(start_sec=0, end_sec=end_sec)
+            video_data = video.get_clip(start_sec=self.start_sec, end_sec=end_sec)
+            
             # Apply a transform to normalize the video input
             video_data = self.transform(video_data)
+            #print("video transformed")
 
             # Move the inputs to the desired device
             inputs = video_data["video"]
-            inputs = [i.to(device)[None, ...] for i in inputs]
-
+            with torch.no_grad():
+                inputs = [i.to(device)[None, ...] for i in inputs]
+            #print('Cast to device')
+            #print(inputs[0].size())
+            #print(len(inputs))
             return inputs
+
+if __name__=='__main__':
+    videos = glob.glob('/home/shaunaks/cls_data/processed_data/*/*')
+    enc_vid = EncodeVideo()
+    for vid in tqdm(videos):
+        enc_v  = enc_vid.get_output(vid)
+        #del enc_v

@@ -9,6 +9,6 @@ class GetTextFromAudio:
 
 class TokenizeText:
     def __init__(self, model_name='distilbert-base-uncased'):
-        self.tokeizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
     def tokenize(self, text):
         return self.tokenizer(text, return_tensors="pt")
