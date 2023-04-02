@@ -11,8 +11,8 @@ class VideoModel(nn.Module):
         self.model = torch.hub.load('facebookresearch/pytorchvideo', 'slowfast_r50', pretrained=True)
 
     def forward(self, x):
+        x = x.squeeze(0)
         pred = self.model(x)
-
         return pred
 
 #class AudioModel(nn.Module):
@@ -40,8 +40,11 @@ class LanguageModel(nn.Module):
 
             @param tokenized_text: Text tokenized using BERT
         """
+        ## WORKAROUND! NOT AT ALL RECOMMENDED, STILL TRYIN TO FIGURE OUT WHY THE BELOW TWO LINES ARE NEEDED FOR LANGUAGE MODEL
+        tokenized_text['input_ids'] = tokenized_text['input_ids'].squeeze(0)
+        tokenized_text['attention_mask'] = tokenized_text['attention_mask'].squeeze(0)
         x = self.model(**tokenized_text).attentions[-1]
-        x = x.reshape(x.size(0), x.size(1), -1)
+        x = x.reshape(x.size(0), -1)
         x = self.flatten(self.linear(x))
         return x
 
@@ -60,15 +63,15 @@ class UnifiedModel(nn.Module):
         super(UnifiedModel, self).__init__()
         self.in_dims = in_dims #dim_lang_model + dim_video_classifier + dim_audio_classifier
         self.intermediate_dims = intermediate_dims #obtained after linear layer on in_dims
-        self.num_classes = 1
+        self.num_classes = 2
         self.LanguageModel_obj = LanguageModel_obj
         self.VideModel_obj = VideModel_obj
         self.AudioModel_obj = AudioModel_obj
-        self.linear1 = nn.Linear(self.in_dims, self.intermediate_dim)
-        self.linear2 = nn.Linear(self.intermediate_dim, self.num_classes)
-        self.sigmoid = nn.Sigmoid()
+        self.linear1 = nn.Linear(self.in_dims, self.intermediate_dims)
+        self.linear2 = nn.Linear(self.intermediate_dims, self.num_classes)
+        #self. = nn.Sigmoid()
 
-    def forward(self, language_model_in, video_classifier_in, audio_classifier_in):
+    def forward(self, language_model_in, video_classifier_in):#, audio_classifier_in):
         """
             Description: Forward function takes language model output , video_classifier output and audio_classifier output
 
@@ -78,12 +81,12 @@ class UnifiedModel(nn.Module):
         """
         language_model_out = self.LanguageModel_obj(language_model_in)
         video_classifier_out = self.VideModel_obj(video_classifier_in)
-        audio_classifier_out = self.AudioModel_obj(audio_classifier_in)
-
-        x = torch.cat((language_model_out, video_classifier_out, audio_classifier_out), axis=-1)
+        #audio_classifier_out = self.AudioModel_obj(audio_classifier_in)
+        
+        x = torch.cat((language_model_out, video_classifier_out), axis=-1)
         x = self.linear1(x)
         x = self.linear2(x)
-        x = self.sigmoid(x)
+        #x = self.sigmoid(x)
         return x
 
 

@@ -8,6 +8,7 @@ import numpy as np
 from data_utils import *
 import torch.nn as nn
 from models import *
+from data_utils import makedir
 from torch.optim import SGD, Adam
 from dataset import VideoClipDataset
 from models import LanguageModel, UnifiedModel
@@ -15,40 +16,54 @@ from torch.utils.data import DataLoader
 from text_utils import GetTextFromAudio, TokenizeText
 from video_utils import EncodeVideo
 from models import VideoModel
-from audio_utils import GetSpectrogramFromAudio
-from torch.utils.data import SubsetRandomSampler
+#from audio_utils import GetSpectrogramFromAudio
+#from torch.utils.data import SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
 
 
 def get_train_val_split_videos(root_dir, split_pct=0.2):
+    
     #Split explicit_train_val videos
-    explicit_videos = glob.glob(os.path.join(root_dir,'explicit/*'))
-    explicit_indices = range(len(explicit_videos))
+    explicit_videos_before_filtering = glob.glob(os.path.join(root_dir,'explicit/*'))
+    explicit_videos = list()
+    for video in explicit_videos_before_filtering:
+        if len(glob.glob(os.path.join(video, 'video_encs/*')))!=0:
+            explicit_videos.append(video)
+    explicit_indices = list(range(len(explicit_videos)))
     np.random.shuffle(explicit_indices)
     explicit_val_split_index = int(len(explicit_videos)*split_pct)
-    explicit_videos_val,  explicit_videos_train = explicit_indices[:explicit_val_split_index], explicit_indices[explicit_val_split_index:]
+    explicit_videos_val,  explicit_videos_train = [explicit_videos[index] for index in explicit_indices[:explicit_val_split_index]], [explicit_videos[index] for index in explicit_indices[explicit_val_split_index:]]
 
     #Split non_explicit_train_val videos
-    non_explicit_videos = glob.glob(os.path.join(root_dir,'non_explicit/*'))    
-    non_explicit_indices = range(len(non_explicit_videos))
+    non_explicit_videos_before_filtering = glob.glob(os.path.join(root_dir,'non_explicit/*'))
+    non_explicit_videos = list()
+    for video in non_explicit_videos_before_filtering:
+        if len(glob.glob(os.path.join(video, 'video_encs/*')))!=0:
+            non_explicit_videos.append(video)
+
+    non_explicit_indices = list(range(len(non_explicit_videos)))
     np.random.shuffle(non_explicit_indices)
     non_explicit_val_split_index = int(len(non_explicit_videos)*split_pct)
-    non_explicit_videos_val,  non_explicit_videos_train = non_explicit_indices[:non_explicit_val_split_index], non_explicit_indices[non_explicit_val_split_index:]
+    non_explicit_videos_val,  non_explicit_videos_train = [non_explicit_videos[index] for index in non_explicit_indices[:non_explicit_val_split_index]], [non_explicit_videos[index] for index in non_explicit_indices[non_explicit_val_split_index:]]
 
     #Get the total train_val videos
     train_videos, val_videos = explicit_videos_train+non_explicit_videos_train, explicit_videos_val+non_explicit_videos_val
+    print('Explicit train ',len(explicit_videos_train))
+    print('Non_explicit train ',len(non_explicit_videos_train))
+    print('Explicit val ',len(explicit_videos_val))
+    print('Non_explicit val ',len(non_explicit_videos_val))
+    
     return train_videos, val_videos
 
 
 def train_val(**train_val_arg_dict):
-    unifiedmodel_obj, optimizer, train_dataloader, val_dataloader, n_epochs, batch_size, print_every, experiment_path = train_val_arg_dict.values()
-    runs_dir = os.path.join(experiment_path,'runs')
-    writer = SummaryWriter(runs_dir)
+    unifiedmodel_obj, optimizer, train_dataloader, val_dataloader, n_epochs, batch_size, print_every, experiment_dir, device = train_val_arg_dict.values()
+    writer = SummaryWriter(experiment_dir)
     train_losses = list()
     val_losses = list()
-    loss_ = nn.BCELoss()
+    loss_ = nn.CrossEntropyLoss()
     best_loss = float('inf')
-    sigmoid_threshold = 0.5
+    softmax = nn.Softmax()
 
     for epoch in range(n_epochs):
         #train
@@ -58,17 +73,19 @@ def train_val(**train_val_arg_dict):
         correct_train_preds = 0
         unifiedmodel_obj.train()
         for i, modality_inputs in enumerate(train_dataloader):
-            transformed_video, processed_spectrogram, processed_speech, target = modality_inputs
+            transformed_video, processed_speech, target = modality_inputs
             optimizer.zero_grad()
-            predictions = unifiedmodel_obj(modality_inputs)
+            predictions = unifiedmodel_obj(processed_speech, transformed_video)
             batch_loss = loss_(predictions, target)
             batch_loss.backward()
             optimizer.step()
-            predictions = predictions.cpu().detach()
+            #predictions = predictions.cpu().detach()
+            predictions = predictions.detach()
             target = target.cpu().detach()
-            predictions[predictions > 0.5] = 1
-            predictions[predictions <= 0.5] = 0
-            num_correct_preds = (predictions==target).sum()
+            target = target.detach()
+            pred_softmax = softmax(predictions, dim=1)
+            pred_softmax = torch.argmax(pred_softmax, dim=1)
+            num_correct_preds = (pred_softmax==target).sum()
             correct_train_preds+=num_correct_preds
             epoch_loss_train+=batch_loss.cpu().detach().item()
             writer.add_scalar("Loss/train", epoch_loss_train/(i+1), epoch)
@@ -87,12 +104,16 @@ def train_val(**train_val_arg_dict):
         correct_val_preds = 0
         for i, modality_inputs in enumerate(val_dataloader):
             with torch.no_grad():
-                transformed_video, processed_spectrogram, processed_speech, target = modality_inputs
+                transformed_video, processed_speech, target = modality_inputs
+                transformed_video = transformed_video.to(device)
+                processed_speech = processed_speech.to(device)
+                target = target.to(device)
+
                 predictions = unifiedmodel_obj(modality_inputs)
                 batch_loss = loss_(predictions, target)
-                predictions[predictions > 0.5] = 1
-                predictions[predictions <= 0.5] = 0
-                num_correct_preds = (predictions==target).sum()
+                pred_softmax = softmax(predictions, dim=1)
+                pred_softmax = torch.argmax(pred_softmax, dim=1)
+                num_correct_preds = (pred_softmax==target).sum()
                 correct_val_preds+=num_correct_preds
                 epoch_loss_val+=batch_loss
                 writer.add_scalar("Loss/val", epoch_loss_val/(i+1), epoch)
@@ -116,26 +137,30 @@ if __name__=='__main__':
     parser.add_argument('--n_epochs',type=int)
     parser.add_argument('--learning_rate',type=float)
     parser.add_argument('--optimizer_name',type=str)
-    parser.add_argument('--root_dir', type=str,description='path where videos will be stored in the form of root_folder/<class>/video_file')
-    parser.add_argument('--language_model_name', type=str,description='path to the fine-tuned model OR huggingface pretrained model name')
-    parser.add_argument('--video_model_name', type=str,description='path to the fine-tuned model OR pretrained model name') #Optional
-    parser.add_argument('--audio_model_name', type=str,description='path to the fine-tuned model OR pretrained model name') #Optional
-    parser.add_argument('--experiment_path',type=str)
+    parser.add_argument('--root_dir', type=str,help='path where videos will be stored in the form of root_folder/<class>/video_file')
+    parser.add_argument('--language_model_name', type=str,help='path to the fine-tuned model OR huggingface pretrained model name')
+    parser.add_argument('--video_model_name', type=str,help='path to the fine-tuned model OR pretrained model name') #Optional
+    parser.add_argument('--audio_model_name', type=str,help='path to the fine-tuned model OR pretrained model name') #Optional
+    parser.add_argument('--experiment_name',type=str)
     parser.add_argument('--batch_size',type=int)
     parser.add_argument('--print_every',type=int)
     args = parser.parse_args()
 
-    n_epochs = args.epochs
+    device = torch.device('cuda:0')
+    n_epochs = args.n_epochs
     learning_rate = args.learning_rate
     root_dir = args.root_dir
     language_model_name = args.language_model_name
     video_model_name = audio_model_name = language_model_name = None
     optimizer_name = args.optimizer_name
     print_every = args.print_every
-    experiment_path = args.experiment_path
+    experiment_name = args.experiment_name
     batch_size = args.batch_size
 
-    makedir(experiment_path)
+    runs_dir = os.path.join(os.getcwd(),'runs')
+    makedir(runs_dir)
+    experiment_dir = os.path.join(runs_dir, experiment_name)
+    makedir(experiment_dir)
 
     if args.video_model_name:
         video_model_name = args.video_model_name
@@ -143,10 +168,9 @@ if __name__=='__main__':
     if args.language_model_name:
         language_model_name = args.language_model_name
 
-    if args.audio_model_name:
-        audio_model_name = args.audio_model_name
+    # if args.audio_model_name:
+    #     audio_model_name = args.audio_model_name
 
-    train_videos, val_videos = get_train_val_split_videos(root_dir)
 
     ##Functions to transform modalities
     EncodeVideo_obj = EncodeVideo() 
@@ -155,12 +179,12 @@ if __name__=='__main__':
     TokenizeText_obj = TokenizeText()
 
     ##Model init
-    LanguageModel_obj = LanguageModel(model_name=language_model_name)
-    VideoModel_obj = VideoModel()
+    LanguageModel_obj = LanguageModel(model_name = language_model_name)
+    VideoModel_obj = VideoModel(model_name = video_model_name)
     #AudioModel_obj = AudioModel() @Joon
     in_dims = 2000
     intermediate_dims = 100
-    UnifiedModel_obj = UnifiedModel(in_dims, intermediate_dim, LanguageModel_obj, VideModel_obj, AudioModel_obj)
+    UnifiedModel_obj = UnifiedModel(in_dims, intermediate_dims, LanguageModel_obj, VideoModel_obj).to(device)#, AudioModel_obj)
 
     if optimizer_name in ['SGD','sgd']:
         optimizer = SGD(UnifiedModel_obj.parameters(), lr=learning_rate, momentum=0.9)
@@ -169,6 +193,7 @@ if __name__=='__main__':
 
     all_videos = glob.glob(os.path.join(root_dir,'processed_data/non_encoded_videos/*/*'))
     encoded_videos_path = os.path.join(root_dir,'processed_data/encoded_videos')
+
     if not os.path.exists(encoded_videos_path):
         encode_videos(all_videos, encoded_videos_path, EncodeVideo_obj, GetTextFromAudio_obj, TokenizeText_obj)    
     
@@ -176,31 +201,33 @@ if __name__=='__main__':
     train_dataset_dict = {
         'root_dir':root_dir,
         'all_videos':train_encoded_videos,
+        'device':device
     }
 
     val_dataset_dict = {
         'root_dir':root_dir,
         'all_videos':val_encoded_videos,
+        'device':device
     }
 
 
-
-    train_dataloader, val_dataloader = DataLoader(VideoClipDataset(train_dataset_dict), shuffle=True, batch_size=batch_size),\
-    DataLoader(VideoClipDataset(val_dataset_dict), shuffle=True, batch_size=batch_size)
+    train_dataloader, val_dataloader = DataLoader(VideoClipDataset(**train_dataset_dict), shuffle=True, batch_size=batch_size),\
+    DataLoader(VideoClipDataset(**val_dataset_dict), shuffle=False, batch_size=batch_size)
 
     print('Training on \n train:{} batches \n val:{} batches'.format(len(train_dataloader), len(val_dataloader)))
 
     train_val_arg_dict = {
-        'unifiedmodel_obj':unifiedmodel_obj, 
+        'unifiedmodel_obj':UnifiedModel_obj, 
         'optimizer':optimizer,
         'train_dataloader':train_dataloader,
         'val_dataloader':val_dataloader,
         'n_epochs':n_epochs,
         'batch_size':batch_size,
         'print_every':print_every,
-        'experiment_path':experiment_path
+        'experiment_path':experiment_dir,
+        'device':device
     }
-    train_val(train_val_arg_dict)
+    train_val(**train_val_arg_dict)
 
 
 
