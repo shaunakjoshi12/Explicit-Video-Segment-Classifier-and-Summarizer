@@ -30,6 +30,7 @@ def get_train_val_split_videos(root_dir, split_pct=0.2):
     #Split explicit_train_val videos
     explicit_videos_before_filtering = glob.glob(os.path.join(root_dir,'explicit/*'))
     explicit_videos = list()
+    #explicit_videos = glob.glob(os.path.join(root_dir,'explicit/*'))
     for video in explicit_videos_before_filtering:
         if len(glob.glob(os.path.join(video, 'video_encs/*')))!=0:
             explicit_videos.append(video)
@@ -42,6 +43,7 @@ def get_train_val_split_videos(root_dir, split_pct=0.2):
     #Split non_explicit_train_val videos
     non_explicit_videos_before_filtering = glob.glob(os.path.join(root_dir,'non_explicit/*'))
     non_explicit_videos = list()
+    #non_explicit_videos = glob.glob(os.path.join(root_dir,'non_explicit/*'))
     for video in non_explicit_videos_before_filtering:
         if len(glob.glob(os.path.join(video, 'video_encs/*')))!=0:
             non_explicit_videos.append(video)
@@ -58,15 +60,14 @@ def get_train_val_split_videos(root_dir, split_pct=0.2):
     print('Explicit val ',len(explicit_videos_val))
     print('Non_explicit val ',len(non_explicit_videos_val))
     
-    return train_videos, val_videos
+    return train_videos, val_videos, len(explicit_videos_train), len(non_explicit_videos_train)
 
 
 def train_val(**train_val_arg_dict):
-    unifiedmodel_obj, optimizer, train_dataloader, val_dataloader, n_epochs, batch_size, print_every, experiment_dir, device = train_val_arg_dict.values()
+    unifiedmodel_obj, optimizer, train_dataloader, val_dataloader, n_epochs, batch_size, print_every, experiment_dir, loss_, device = train_val_arg_dict.values()
     writer = SummaryWriter(experiment_dir)
     train_losses = list()
     val_losses = list()
-    loss_ = nn.CrossEntropyLoss()
     best_loss = float('inf')
     softmax = nn.Softmax(dim=1)
     n_iters_train = 0
@@ -166,8 +167,9 @@ if __name__=='__main__':
     parser.add_argument('--optimizer_name',type=str)
     parser.add_argument('--root_dir', type=str,help='path where videos will be stored in the form of root_folder/<class>/video_file')
     parser.add_argument('--language_model_name', type=str,help='path to the fine-tuned model OR huggingface pretrained model name')
-    parser.add_argument('--video_model_name', type=str,help='path to the fine-tuned model OR pretrained model name') #Optional
-    parser.add_argument('--audio_model_name', type=str,help='path to the fine-tuned model OR pretrained model name') #Optional
+    parser.add_argument('--video_model_name', type=str,help='pretrained model name') #Optional
+    parser.add_argument('--audio_model_name', type=str,help='pretrained model name') #Optional
+    parser.add_argument('--weighted_cross_entropy', action='store_true', help='boolean whether to have weighted cross entropy or not') #Optional
     parser.add_argument('--experiment_name',type=str)
     parser.add_argument('--batch_size',type=int)
     parser.add_argument('--print_every',type=int)
@@ -196,6 +198,8 @@ if __name__=='__main__':
 
     if args.language_model_name:
         language_model_name = args.language_model_name
+
+    weighted_cross_entropy = args.weighted_cross_entropy
 
     # if args.audio_model_name:
     #     audio_model_name = args.audio_model_name
@@ -231,7 +235,7 @@ if __name__=='__main__':
         TokenizeText_obj = TokenizeText()        
         encode_videos(all_videos, encoded_videos_path, EncodeVideo_obj, GetTextFromAudio_obj, TokenizeText_obj)    
     
-    train_encoded_videos, val_encoded_videos = get_train_val_split_videos(encoded_videos_path)
+    train_encoded_videos, val_encoded_videos, num_explicit_videos_train, num_non_explicit_videos_train = get_train_val_split_videos(encoded_videos_path)
     pickle.dump(val_encoded_videos, open(os.path.join(experiment_dir,'val_encoded_video.pkl'), 'wb'))
     train_dataset_dict = {
         'root_dir':root_dir,
@@ -250,6 +254,14 @@ if __name__=='__main__':
 
     train_dataloader, val_dataloader = DataLoader(VideoClipDataset(**train_dataset_dict), shuffle=True, batch_size=batch_size),\
     DataLoader(VideoClipDataset(**val_dataset_dict), shuffle=False, batch_size=batch_size)
+    if weighted_cross_entropy:
+        #pdb.set_trace()
+        total_videos = num_explicit_videos_train + num_non_explicit_videos_train
+        class_dist = [num_explicit_videos_train, num_non_explicit_videos_train]
+        class_weights = [1-(elem/total_videos) for elem in class_dist]
+        loss_ = nn.CrossEntropyLoss(weight=torch.FloatTensor(class_weights).to(device))
+    else:
+        loss_ = nn.CrossEntropyLoss()
 
     print('Training on \n train:{} batches \n val:{} batches'.format(len(train_dataloader), len(val_dataloader)))
 
@@ -262,6 +274,7 @@ if __name__=='__main__':
         'batch_size':batch_size,
         'print_every':print_every,
         'experiment_path':experiment_dir,
+        'loss':loss_,
         'device':device
     }
     train_val(**train_val_arg_dict)

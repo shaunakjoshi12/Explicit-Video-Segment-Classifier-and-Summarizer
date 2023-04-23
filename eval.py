@@ -3,6 +3,7 @@ import glob
 import pdb
 import torch
 import pickle
+import argparse
 from tqdm import tqdm
 import torch.nn as nn
 from models import VideoModel
@@ -53,11 +54,15 @@ def inference_on_val(non_encoded_videos_path, val_encoded_videos_pkl, classes, c
     print('f1-score:{} accuracy:{}'.format(multiclass_f1_score(preds_val, targets_val, num_classes=2, average="macro").item(), (preds_val==targets_val).sum()/len(targets_val)))
 
     
-    #pdb.set_trace()
 
 if __name__=='__main__':
-    root_dir_path = os.path.join(os.path.expanduser('~'), 'cls_data')
-    experiment_name = 'third_run_sgd_lr_1e-3_macro_f1'
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--root_dir_path', type=str, default=os.path.join(os.path.expanduser('~'), 'cls_data'))
+    parser.add_argument('--experiment_name', type=str, default='third_run_sgd_lr_1e-3_macro_f1_with_seed_42')
+    
+    args = parser.parse_args()
+    root_dir_path = args.root_dir_path
+    experiment_name = args.experiment_name
     non_encoded_videos_path = os.path.join(root_dir_path,'processed_data/non_encoded_videos')
     val_encoded_videos_pkl = 'runs/{}/val_encoded_video.pkl'.format(experiment_name)
     classes = {elem.split('/')[-1]:i for i, elem in enumerate(glob.glob(os.path.join(root_dir_path,'processed_data/encoded_videos/*')))}
