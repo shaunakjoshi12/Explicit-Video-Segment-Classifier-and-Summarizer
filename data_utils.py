@@ -117,7 +117,6 @@ def encode_videos(videos_path, encoded_videos_path, EncodeVideo_obj, GetTextFrom
 
         
         try:
-            
             video = cv2.VideoCapture(video_path)
             fps = video.get(cv2.CAP_PROP_FPS)
             frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))

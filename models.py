@@ -1,5 +1,6 @@
 import torch, pdb
 import torch.nn as nn
+#import torchvision.transforms as T
 from transformers import AutoModelForSequenceClassification
 
 #class VideoModel(nn.Module):
@@ -9,9 +10,10 @@ class VideoModel(nn.Module):
         super().__init__()
 
         self.model = torch.hub.load('facebookresearch/pytorchvideo', 'slowfast_r50', pretrained=True)
+        #self.t = T.Resize()
 
     def forward(self, x):
-        x = x.squeeze(0)
+        x = [elem.squeeze(0) for elem in x]
         pred = self.model(x)
         return pred
 
@@ -27,12 +29,9 @@ class LanguageModel(nn.Module):
         """
         super(LanguageModel, self).__init__()
         self.model = AutoModelForSequenceClassification.from_pretrained(
-            pretrained_model_name_or_path=model_name, output_attentions=output_attentions
+            pretrained_model_name_or_path=model_name, output_attentions=output_attentions, num_labels=100, ignore_mismatched_sizes=True
         )
-        self.att_layer_dims = 1024
-        self.linear_out = 50
-        self.linear = nn.Linear(self.att_layer_dims, self.linear_out)
-        self.flatten = nn.Flatten()
+        
 
     def forward(self, tokenized_text):
         """
@@ -43,9 +42,7 @@ class LanguageModel(nn.Module):
         ## WORKAROUND! NOT AT ALL RECOMMENDED, STILL TRYIN TO FIGURE OUT WHY THE BELOW TWO LINES ARE NEEDED FOR LANGUAGE MODEL
         tokenized_text['input_ids'] = tokenized_text['input_ids'].squeeze(0)
         tokenized_text['attention_mask'] = tokenized_text['attention_mask'].squeeze(0)
-        x = self.model(**tokenized_text).attentions[-1]
-        x = x.reshape(x.size(0), -1)
-        x = self.flatten(self.linear(x))
+        x = self.model(**tokenized_text).logits
         return x
 
 class UnifiedModel(nn.Module):
@@ -69,7 +66,6 @@ class UnifiedModel(nn.Module):
         self.AudioModel_obj = AudioModel_obj
         self.linear1 = nn.Linear(self.in_dims, self.intermediate_dims)
         self.linear2 = nn.Linear(self.intermediate_dims, self.num_classes)
-        #self. = nn.Sigmoid()
 
     def forward(self, language_model_in, video_classifier_in):#, audio_classifier_in):
         """
@@ -82,8 +78,8 @@ class UnifiedModel(nn.Module):
         language_model_out = self.LanguageModel_obj(language_model_in)
         video_classifier_out = self.VideModel_obj(video_classifier_in)
         #audio_classifier_out = self.AudioModel_obj(audio_classifier_in)
-        
         x = torch.cat((language_model_out, video_classifier_out), axis=-1)
+        #x = self.dropout1(self.linear1(x))
         x = self.linear1(x)
         x = self.linear2(x)
         #x = self.sigmoid(x)

@@ -3,6 +3,7 @@ import pdb
 import glob
 import torch
 import pickle
+from video_utils import EncodeVideo
 from torch.utils.data import Dataset, DataLoader
 
 
@@ -35,37 +36,27 @@ class VideoClipDataset(Dataset):
             @param device: "cuda" or "cpu"
         """
     
-        self.root_dir_path, self.encoded_videos, self.device = dataset_dict.values()
-        video_encodings = list()
-        audio_encodings = list()
-        for video in self.encoded_videos:
-            video_encodings+=glob.glob(os.path.join(video, 'video_encs/*'))
-            audio_encodings+=glob.glob(os.path.join(video, 'audio_encs/*'))
-
-        assert len(video_encodings)==len(audio_encodings), 'check your data'
-        del video_encodings, audio_encodings
-        #print(self.encoded_videos)
-            
+        self.root_dir_path, self.encoded_videos, self.EncodeVideo_obj, self.device = dataset_dict.values()
+        self.all_non_encoded_videos_path = os.path.join(self.root_dir_path,'processed_data/non_encoded_videos')
         self.classes = {elem.split('/')[-1]:i for i, elem in enumerate(glob.glob(os.path.join(self.root_dir_path,'processed_data/encoded_videos/*')))} #Map class name to id
 
     def __getitem__(self, index):
-        video_enc_path, audio_enc_path = glob.glob(os.path.join(self.encoded_videos[index],'video_encs/*')), glob.glob(os.path.join(self.encoded_videos[index], 'audio_encs/*'))
-        assert len(video_enc_path)==len(audio_enc_path)
-        assert len(video_enc_path)==1
-        video_enc_path = video_enc_path[0]
+        #pdb.set_trace()
+        audio_enc_path = glob.glob(os.path.join(self.encoded_videos[index], 'audio_encs/*'))
+        assert len(audio_enc_path)==1
         audio_enc_path = audio_enc_path[0]
-        class_video_enc = video_enc_path.split('/')[-4]
         class_audio_enc = audio_enc_path.split('/')[-4]
-
-        assert class_video_enc == class_audio_enc,'class mismatch! check your data'
-        video_enc = pickle.load(open(video_enc_path,'rb'))['transformed_video']
+        video_path = os.path.join(self.all_non_encoded_videos_path, class_audio_enc, self.encoded_videos[index].split('/')[-1])
+        #print(video_path,' ',audio_enc_path)
+        video_enc = self.EncodeVideo_obj.get_video(video_path)
         audio_enc = pickle.load(open(audio_enc_path,'rb'))['processed_speech']
+
         video_enc = [elem.to(self.device) for elem in video_enc]
         audio_enc = {key:audio_enc[key].to(self.device) for key in audio_enc.keys()}
-        class_video_enc = self.classes[class_video_enc]
-        class_video_enc = torch.LongTensor(class_video_enc).to(self.device)
-
-        return video_enc, audio_enc, class_video_enc
+        class_audio_enc = self.classes[class_audio_enc]
+        class_audio_enc = torch.tensor(class_audio_enc).to(self.device)
+        #print('language model in in dataset ',audio_enc['input_ids'].size())
+        return video_enc, audio_enc, class_audio_enc
 
     def __len__(self):
         return len(self.encoded_videos)
@@ -75,11 +66,14 @@ if __name__=='__main__':
     root_dir_path = os.path.join(os.path.expanduser('~'), 'cls_data')
     dataset_dict = {
         'root_dir_path':root_dir_path,
-        'encoded_videos':os.path.join(os.path.join(root_dir_path, 'processed_data/encoded_videos'))
+        'all_videos':glob.glob(os.path.join(os.path.join(root_dir_path, 'processed_data/encoded_videos'))),
+        'device':torch.device('cuda:0')
     }
     videoclipdataset = VideoClipDataset(**dataset_dict)
-    videoclipdataloader = DataLoader(videoclipdataset, batch_size=2)
+    videoclipdataloader = DataLoader(videoclipdataset, batch_size=1)
     for data in videoclipdataloader:
         video_enc, audio_enc, class_ = data
+        print(video_enc[0].size())
+        print(video_enc[1].size())
         
 

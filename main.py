@@ -1,6 +1,7 @@
 import os
 import pdb
 import torch
+import shutil
 import pickle
 import glob
 import argparse
@@ -19,6 +20,9 @@ from models import VideoModel
 #from audio_utils import GetSpectrogramFromAudio
 #from torch.utils.data import SubsetRandomSampler
 from torch.utils.tensorboard import SummaryWriter
+from torcheval.metrics.functional import multiclass_f1_score
+import warnings
+warnings.filterwarnings("ignore")
 
 
 def get_train_val_split_videos(root_dir, split_pct=0.2):
@@ -30,6 +34,7 @@ def get_train_val_split_videos(root_dir, split_pct=0.2):
         if len(glob.glob(os.path.join(video, 'video_encs/*')))!=0:
             explicit_videos.append(video)
     explicit_indices = list(range(len(explicit_videos)))
+    np.random.seed(42)
     np.random.shuffle(explicit_indices)
     explicit_val_split_index = int(len(explicit_videos)*split_pct)
     explicit_videos_val,  explicit_videos_train = [explicit_videos[index] for index in explicit_indices[:explicit_val_split_index]], [explicit_videos[index] for index in explicit_indices[explicit_val_split_index:]]
@@ -63,8 +68,10 @@ def train_val(**train_val_arg_dict):
     val_losses = list()
     loss_ = nn.CrossEntropyLoss()
     best_loss = float('inf')
-    softmax = nn.Softmax()
-
+    softmax = nn.Softmax(dim=1)
+    n_iters_train = 0
+    n_iters_val = 0
+    
     for epoch in range(n_epochs):
         #train
         print('\n\n Epoch: {}'.format(epoch+1))
@@ -72,30 +79,44 @@ def train_val(**train_val_arg_dict):
         epoch_loss_train=0
         correct_train_preds = 0
         unifiedmodel_obj.train()
+        preds_train = list()
+        targets_train = list()
+        preds_val = list()
+        targets_val = list()
+
         for i, modality_inputs in enumerate(train_dataloader):
             transformed_video, processed_speech, target = modality_inputs
+            target = target.to(device)
+
             optimizer.zero_grad()
             predictions = unifiedmodel_obj(processed_speech, transformed_video)
             batch_loss = loss_(predictions, target)
             batch_loss.backward()
             optimizer.step()
-            #predictions = predictions.cpu().detach()
             predictions = predictions.detach()
-            target = target.cpu().detach()
             target = target.detach()
-            pred_softmax = softmax(predictions, dim=1)
+            pred_softmax = softmax(predictions)
             pred_softmax = torch.argmax(pred_softmax, dim=1)
             num_correct_preds = (pred_softmax==target).sum()
             correct_train_preds+=num_correct_preds
             epoch_loss_train+=batch_loss.cpu().detach().item()
-            writer.add_scalar("Loss/train", epoch_loss_train/(i+1), epoch)
+            n_iters_train+=1
+            preds_train.append(pred_softmax.cpu().item())
+            targets_train.append(target.cpu().item())
+            
+            
 
             if i % print_every == 0:
-                print('Batch:{}, Train epoch loss average:{} and accuracy till now:{}'.format(i+1, epoch_loss_train/(i+1), correct_train_preds/((i+1)*batch_size)))
+                print('Batch:{}, Train epoch loss average:{}'.format(i+1, epoch_loss_train/(i+1)))
 
+        writer.add_scalar("Loss/train", epoch_loss_train/len(train_dataloader), epoch+1)
+        preds_train = torch.tensor(preds_train)
+        targets_train = torch.tensor(targets_train)
+        writer.add_scalar("F1/train", multiclass_f1_score(preds_train, targets_train, num_classes=2, average="macro").item(), epoch+1)
         average_train_loss_per_epoch = epoch_loss_train/len(train_dataloader)
-        print('For epoch:{} the average train loss: {} and the accuracy: {}'.format(epoch+1, average_train_loss_per_epoch, correct_train_preds/(len(train_dataloader)*batch_size)))
+        print('For epoch:{} the average train loss: {} and the accuracy: {}'.format(epoch+1, average_train_loss_per_epoch, correct_train_preds/len(train_dataloader)))
         train_losses.append(average_train_loss_per_epoch)
+    
 
         #Val
         print('\n Val')
@@ -105,29 +126,35 @@ def train_val(**train_val_arg_dict):
         for i, modality_inputs in enumerate(val_dataloader):
             with torch.no_grad():
                 transformed_video, processed_speech, target = modality_inputs
-                transformed_video = transformed_video.to(device)
-                processed_speech = processed_speech.to(device)
                 target = target.to(device)
 
-                predictions = unifiedmodel_obj(modality_inputs)
+                predictions = unifiedmodel_obj(processed_speech, transformed_video)
                 batch_loss = loss_(predictions, target)
-                pred_softmax = softmax(predictions, dim=1)
+                pred_softmax = softmax(predictions)
                 pred_softmax = torch.argmax(pred_softmax, dim=1)
                 num_correct_preds = (pred_softmax==target).sum()
                 correct_val_preds+=num_correct_preds
                 epoch_loss_val+=batch_loss
-                writer.add_scalar("Loss/val", epoch_loss_val/(i+1), epoch)
+                n_iters_val+=1
+                preds_val.append(pred_softmax.cpu().item())
+                targets_val.append(target.cpu().item())
+                
+                
 
             if i % print_every == 0:
                 print('Batch:{}, Val epoch loss average:{}'.format(i+1, epoch_loss_val/(i+1)))
 
+        writer.add_scalar("Loss/val", epoch_loss_val/len(val_dataloader), epoch+1)
+        preds_val = torch.tensor(preds_val)
+        targets_val = torch.tensor(targets_val)
+        writer.add_scalar("F1/val", multiclass_f1_score(preds_val, targets_val, num_classes=2, average="macro").item(), epoch+1)
         average_val_loss_per_epoch = epoch_loss_val/len(val_dataloader)
-        print('For epoch:{} the average val loss: {} and the accuracy:{}'.format(epoch+1, average_val_loss_per_epoch, correct_preds/(len(val_dataloader)*batch_size)))
+        print('For epoch:{} the average val loss: {} and the accuracy:{}'.format(epoch+1, average_val_loss_per_epoch, correct_val_preds/len(val_dataloader)))
         val_losses.append(average_val_loss_per_epoch)
 
         if average_val_loss_per_epoch < best_loss:
             best_loss = average_val_loss_per_epoch
-            torch.save(unifiedmodel_obj.state_dict(), os.path.join(experiment_path, 'best_checkpoint.pth'))
+            torch.save(unifiedmodel_obj.state_dict(), os.path.join(experiment_dir, 'best_checkpoint.pth'))
     writer.flush()
 
 
@@ -158,8 +185,10 @@ if __name__=='__main__':
     batch_size = args.batch_size
 
     runs_dir = os.path.join(os.getcwd(),'runs')
-    makedir(runs_dir)
     experiment_dir = os.path.join(runs_dir, experiment_name)
+    if os.path.exists(experiment_dir):
+        shutil.rmtree(experiment_dir)
+    makedir(runs_dir)
     makedir(experiment_dir)
 
     if args.video_model_name:
@@ -173,18 +202,20 @@ if __name__=='__main__':
 
 
     ##Functions to transform modalities
-    EncodeVideo_obj = EncodeVideo() 
+    
     #GetSpectrogramFromAudio_obj = GetSpectrogramFromAudio() @Arpita
-    GetTextFromAudio_obj = GetTextFromAudio()
-    TokenizeText_obj = TokenizeText()
+    
+    
 
     ##Model init
     LanguageModel_obj = LanguageModel(model_name = language_model_name)
     VideoModel_obj = VideoModel(model_name = video_model_name)
     #AudioModel_obj = AudioModel() @Joon
-    in_dims = 2000
-    intermediate_dims = 100
+    #pdb.set_trace()
+    in_dims = 500
+    intermediate_dims = 50
     UnifiedModel_obj = UnifiedModel(in_dims, intermediate_dims, LanguageModel_obj, VideoModel_obj).to(device)#, AudioModel_obj)
+    #pdb.set_trace()
 
     if optimizer_name in ['SGD','sgd']:
         optimizer = SGD(UnifiedModel_obj.parameters(), lr=learning_rate, momentum=0.9)
@@ -193,20 +224,26 @@ if __name__=='__main__':
 
     all_videos = glob.glob(os.path.join(root_dir,'processed_data/non_encoded_videos/*/*'))
     encoded_videos_path = os.path.join(root_dir,'processed_data/encoded_videos')
+    EncodeVideo_obj = EncodeVideo() 
 
     if not os.path.exists(encoded_videos_path):
+        GetTextFromAudio_obj = GetTextFromAudio()
+        TokenizeText_obj = TokenizeText()        
         encode_videos(all_videos, encoded_videos_path, EncodeVideo_obj, GetTextFromAudio_obj, TokenizeText_obj)    
     
     train_encoded_videos, val_encoded_videos = get_train_val_split_videos(encoded_videos_path)
+    pickle.dump(val_encoded_videos, open(os.path.join(experiment_dir,'val_encoded_video.pkl'), 'wb'))
     train_dataset_dict = {
         'root_dir':root_dir,
-        'all_videos':train_encoded_videos,
+        'all_encoded_videos':train_encoded_videos,
+        'encoded_video_obj':EncodeVideo_obj,
         'device':device
     }
 
     val_dataset_dict = {
         'root_dir':root_dir,
-        'all_videos':val_encoded_videos,
+        'all_encoded_videos':val_encoded_videos,
+        'encoded_video_obj':EncodeVideo_obj,
         'device':device
     }
 
