@@ -1,3 +1,5 @@
+import warnings
+warnings.filterwarnings("ignore")
 import cv2
 import os
 import math
@@ -165,9 +167,9 @@ def encode_videos(videos_path, encoded_videos_path, EncodeVideo_obj, GetTextFrom
 
 
 if __name__=='__main__':
-    root_dir = '/home/shaunaks/cls_data'
+    root_dir = r"C:\Users\ragha\Documents\CSCI566_project"
     all_videos = glob.glob(os.path.join(root_dir,'processed_data/non_encoded_videos/*/*'))
-    encoded_videos_path = os.path.join(root_dir,'processed_data/encoded_videos')
+    encoded_videos_path = os.path.join(root_dir,'processed_data/encoded_videos/')
     EncodeVideo_obj = EncodeVideo() 
     GetTextFromAudio_obj = GetTextFromAudio()
     #GetTextFromAudio_obj = None
