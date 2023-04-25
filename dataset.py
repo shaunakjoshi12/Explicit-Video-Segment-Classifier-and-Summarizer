@@ -47,16 +47,21 @@ class VideoClipDataset(Dataset):
         audio_enc_path = audio_enc_path[0]
         class_audio_enc = audio_enc_path.split('/')[-4]
         video_path = os.path.join(self.all_non_encoded_videos_path, class_audio_enc, self.encoded_videos[index].split('/')[-1])
+        spectrogram_enc_path = glob.glob(os.path.join(self.encoded_videos[index], 'spectro_encs/*'))
+        assert len(spectrogram_enc_path)==1
+        spectrogram_enc_path = spectrogram_enc_path[0]
+        spectrogram_enc = pickle.load(open(spectrogram_enc_path,'rb'))
         #print(video_path,' ',audio_enc_path)
         video_enc = self.EncodeVideo_obj.get_video(video_path)
         audio_enc = pickle.load(open(audio_enc_path,'rb'))['processed_speech']
 
         video_enc = [elem.to(self.device) for elem in video_enc]
         audio_enc = {key:audio_enc[key].to(self.device) for key in audio_enc.keys()}
+        spectrogram_enc = spectrogram_enc.to(self.device)
         class_audio_enc = self.classes[class_audio_enc]
         class_audio_enc = torch.tensor(class_audio_enc).to(self.device)
         #print('language model in in dataset ',audio_enc['input_ids'].size())
-        return video_enc, audio_enc, class_audio_enc
+        return video_enc, audio_enc, spectrogram_enc, class_audio_enc
 
     def __len__(self):
         return len(self.encoded_videos)

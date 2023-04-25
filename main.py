@@ -86,11 +86,11 @@ def train_val(**train_val_arg_dict):
         targets_val = list()
 
         for i, modality_inputs in enumerate(train_dataloader):
-            transformed_video, processed_speech, target = modality_inputs
+            transformed_video, processed_speech, spectrogram, target = modality_inputs
             target = target.to(device)
 
             optimizer.zero_grad()
-            predictions = unifiedmodel_obj(processed_speech, transformed_video)
+            predictions = unifiedmodel_obj(processed_speech, transformed_video, spectrogram)
             batch_loss = loss_(predictions, target)
             batch_loss.backward()
             optimizer.step()
@@ -126,10 +126,10 @@ def train_val(**train_val_arg_dict):
         correct_val_preds = 0
         for i, modality_inputs in enumerate(val_dataloader):
             with torch.no_grad():
-                transformed_video, processed_speech, target = modality_inputs
+                transformed_video, processed_speech,spectrogram, target = modality_inputs
                 target = target.to(device)
 
-                predictions = unifiedmodel_obj(processed_speech, transformed_video)
+                predictions = unifiedmodel_obj(processed_speech, transformed_video, spectrogram)
                 batch_loss = loss_(predictions, target)
                 pred_softmax = softmax(predictions)
                 pred_softmax = torch.argmax(pred_softmax, dim=1)
@@ -167,6 +167,7 @@ if __name__=='__main__':
     parser.add_argument('--optimizer_name',type=str)
     parser.add_argument('--root_dir', type=str,help='path where videos will be stored in the form of root_folder/<class>/video_file')
     parser.add_argument('--language_model_name', type=str,help='path to the fine-tuned model OR huggingface pretrained model name')
+    parser.add_argument('--spectrogram_model_name', type=str,help='path to the fine-tuned model OR huggingface pretrained model name')
     parser.add_argument('--video_model_name', type=str,help='pretrained model name') #Optional
     parser.add_argument('--audio_model_name', type=str,help='pretrained model name') #Optional
     parser.add_argument('--weighted_cross_entropy', action='store_true', help='boolean whether to have weighted cross entropy or not') #Optional
@@ -180,7 +181,8 @@ if __name__=='__main__':
     learning_rate = args.learning_rate
     root_dir = args.root_dir
     language_model_name = args.language_model_name
-    video_model_name = audio_model_name = language_model_name = None
+    spectrogram_model_name = args.spectrogram_model_name
+    video_model_name = args.video_model_name
     optimizer_name = args.optimizer_name
     print_every = args.print_every
     experiment_name = args.experiment_name
@@ -193,33 +195,18 @@ if __name__=='__main__':
     makedir(runs_dir)
     makedir(experiment_dir)
 
-    if args.video_model_name:
-        video_model_name = args.video_model_name
-
-    if args.language_model_name:
-        language_model_name = args.language_model_name
-
     weighted_cross_entropy = args.weighted_cross_entropy
-
-    # if args.audio_model_name:
-    #     audio_model_name = args.audio_model_name
-
-
-    ##Functions to transform modalities
-    
-    #GetSpectrogramFromAudio_obj = GetSpectrogramFromAudio() @Arpita
-    
     
 
     ##Model init
     LanguageModel_obj = LanguageModel(model_name = language_model_name)
     VideoModel_obj = VideoModel(model_name = video_model_name)
-    #AudioModel_obj = AudioModel() @Joon
-    #pdb.set_trace()
-    in_dims = 500
+    SpectrogramModel_obj = SpectrogramModel(model_name = spectrogram_model_name)
+
+    in_dims = 600
     intermediate_dims = 50
-    UnifiedModel_obj = UnifiedModel(in_dims, intermediate_dims, LanguageModel_obj, VideoModel_obj).to(device)#, AudioModel_obj)
-    #pdb.set_trace()
+    UnifiedModel_obj = UnifiedModel(in_dims, intermediate_dims, LanguageModel_obj, VideoModel_obj, SpectrogramModel_obj).to(device)
+
 
     if optimizer_name in ['SGD','sgd']:
         optimizer = SGD(UnifiedModel_obj.parameters(), lr=learning_rate, momentum=0.9)

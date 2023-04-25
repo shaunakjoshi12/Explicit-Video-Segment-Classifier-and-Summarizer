@@ -9,7 +9,8 @@ class VideoModel(nn.Module):
     def __init__(self, model_name='slowfast_r50', pretrained=True) -> None:
         super().__init__()
 
-        self.model = torch.hub.load('facebookresearch/pytorchvideo', 'slowfast_r50', pretrained=True)
+        self.model = torch.hub.load('facebookresearch/pytorchvideo', model_name, pretrained=pretrained)
+        self.model._modules['blocks']._modules['6'].proj = nn.Linear(in_features=2304, out_features=200, bias=True)
         #self.t = T.Resize()
 
     def forward(self, x):
@@ -17,8 +18,17 @@ class VideoModel(nn.Module):
         pred = self.model(x)
         return pred
 
-#class AudioModel(nn.Module):
+#class SpectrogramModel(nn.Module):
 #@TODO #@Arpita define your class which does 1. Takes input as processed_spectrogram tensor from dataset I have defined and returns the pre-final layer from audioclassifier
+class SpectrogramModel(nn.Module):
+    def __init__(self, model_name='resnet18', pretrained=True):
+        super().__init__()
+        self.model = torch.hub.load('pytorch/vision:v0.10.0', model_name, pretrained=pretrained)
+        self.model._modules['fc'] = nn.Linear(in_features=512, out_features=200)
+
+    def forward(self, x):
+        return self.model(x)
+
 
 class LanguageModel(nn.Module):
     def __init__(self, model_name="distilbert-base-uncased", output_attentions=True):
@@ -29,7 +39,7 @@ class LanguageModel(nn.Module):
         """
         super(LanguageModel, self).__init__()
         self.model = AutoModelForSequenceClassification.from_pretrained(
-            pretrained_model_name_or_path=model_name, output_attentions=output_attentions, num_labels=100, ignore_mismatched_sizes=True
+            pretrained_model_name_or_path=model_name, output_attentions=output_attentions, num_labels=200, ignore_mismatched_sizes=True
         )
         
 
@@ -46,7 +56,7 @@ class LanguageModel(nn.Module):
         return x
 
 class UnifiedModel(nn.Module):
-    def __init__(self, in_dims=None, intermediate_dims=None, LanguageModel_obj=None, VideModel_obj=None, AudioModel_obj=None):
+    def __init__(self, in_dims=None, intermediate_dims=None, LanguageModel_obj=None, VideModel_obj=None, SpectrogramModel_obj=None):
         """
             Description: A unified model that takes language model output , video_classifier output and audio_classifier output. Here audio_classifier output is spectrogram
 
@@ -54,7 +64,7 @@ class UnifiedModel(nn.Module):
             @param intermediate_dim: The dimension obtained by using an intermediate linear layer over the input obtained from the 'in_dims' layer
             @param LanguageModel_obj: The pytorch model of LanguageModel defined above
             @param VideModel_obj: The pytorch model of VideoModel defined above
-            @param AudioModel_obj: The pytorch model of AudioModel defined above
+            @param SpectrogramModel_obj: The pytorch model of SpectrogramModel defined above
             
         """
         super(UnifiedModel, self).__init__()
@@ -63,11 +73,11 @@ class UnifiedModel(nn.Module):
         self.num_classes = 2
         self.LanguageModel_obj = LanguageModel_obj
         self.VideModel_obj = VideModel_obj
-        self.AudioModel_obj = AudioModel_obj
+        self.SpectrogramModel_obj = SpectrogramModel_obj
         self.linear1 = nn.Linear(self.in_dims, self.intermediate_dims)
         self.linear2 = nn.Linear(self.intermediate_dims, self.num_classes)
 
-    def forward(self, language_model_in, video_classifier_in):#, audio_classifier_in):
+    def forward(self, language_model_in, video_classifier_in, audio_classifier_in):
         """
             Description: Forward function takes language model output , video_classifier output and audio_classifier output
 
@@ -77,8 +87,8 @@ class UnifiedModel(nn.Module):
         """
         language_model_out = self.LanguageModel_obj(language_model_in)
         video_classifier_out = self.VideModel_obj(video_classifier_in)
-        #audio_classifier_out = self.AudioModel_obj(audio_classifier_in)
-        x = torch.cat((language_model_out, video_classifier_out), axis=-1)
+        audio_classifier_out = self.SpectrogramModel_obj(audio_classifier_in)
+        x = torch.cat((language_model_out, video_classifier_out, audio_classifier_out), axis=-1)
         #x = self.dropout1(self.linear1(x))
         x = self.linear1(x)
         x = self.linear2(x)
