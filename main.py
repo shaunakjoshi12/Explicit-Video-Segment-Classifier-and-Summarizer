@@ -86,7 +86,7 @@ def train_val(**train_val_arg_dict):
         targets_val = list()
 
         for i, modality_inputs in enumerate(train_dataloader):
-            transformed_video, processed_speech, spectrogram, target = modality_inputs
+            _, transformed_video, processed_speech, spectrogram, target = modality_inputs
             target = target.to(device)
 
             optimizer.zero_grad()
@@ -126,7 +126,7 @@ def train_val(**train_val_arg_dict):
         correct_val_preds = 0
         for i, modality_inputs in enumerate(val_dataloader):
             with torch.no_grad():
-                transformed_video, processed_speech,spectrogram, target = modality_inputs
+                _, transformed_video, processed_speech,spectrogram, target = modality_inputs
                 target = target.to(device)
 
                 predictions = unifiedmodel_obj(processed_speech, transformed_video, spectrogram)

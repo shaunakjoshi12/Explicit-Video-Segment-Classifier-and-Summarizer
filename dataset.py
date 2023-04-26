@@ -57,11 +57,11 @@ class VideoClipDataset(Dataset):
 
         video_enc = [elem.to(self.device) for elem in video_enc]
         audio_enc = {key:audio_enc[key].to(self.device) for key in audio_enc.keys()}
-        spectrogram_enc = spectrogram_enc.to(self.device)
+        spectrogram_enc = torch.from_numpy(spectrogram_enc).to(self.device)
         class_audio_enc = self.classes[class_audio_enc]
         class_audio_enc = torch.tensor(class_audio_enc).to(self.device)
         #print('language model in in dataset ',audio_enc['input_ids'].size())
-        return video_enc, audio_enc, spectrogram_enc, class_audio_enc
+        return self.encoded_videos[index], video_enc, audio_enc, spectrogram_enc, class_audio_enc
 
     def __len__(self):
         return len(self.encoded_videos)
