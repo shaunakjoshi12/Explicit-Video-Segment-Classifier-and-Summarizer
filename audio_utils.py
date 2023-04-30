@@ -7,7 +7,6 @@ import pickle
 import librosa
 import numpy as np
 from tqdm import tqdm
-from data_utils import makedir
 from skimage.util import img_as_float32
 from skimage.transform import resize
 from skimage.color import gray2rgb
@@ -15,6 +14,13 @@ from torchvision.transforms import Resize
 import moviepy.editor as mp 
 #class GetSpectrogramFromAudio:
 #@TODO #@Arpita define your class that gets a spectrogram image from audio
+
+def makedir(dir_):
+    if not os.path.exists(dir_):
+        os.makedirs(dir_)
+        return True
+    return False
+
 class GetSpectrogramFromAudio:
     def __init__(self):
         self.threshold = 150
@@ -69,7 +75,7 @@ if __name__ == '__main__':
         makedir(audio_path)
         ext_ = os.path.splitext(video_name)[1]
         save_path = os.path.join(audio_path, video_name.replace(ext_,'_spectro_enc'))
-        # if os.path.exists(save_path):
-        #     continue
+        if os.path.exists(save_path):
+            continue
         spectrogram = GetSpectrogramFromAudio_obj.get_spectrogram(video)
         pickle.dump(spectrogram, open(save_path, 'wb'))

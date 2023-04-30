@@ -32,7 +32,7 @@ def get_train_val_split_videos(root_dir, split_pct=0.2):
     explicit_videos = list()
     #explicit_videos = glob.glob(os.path.join(root_dir,'explicit/*'))
     for video in explicit_videos_before_filtering:
-        if len(glob.glob(os.path.join(video, 'video_encs/*')))!=0:
+        if len(glob.glob(os.path.join(video, 'audio_encs/*')))!=0:
             explicit_videos.append(video)
     explicit_indices = list(range(len(explicit_videos)))
     np.random.seed(42)
@@ -45,7 +45,7 @@ def get_train_val_split_videos(root_dir, split_pct=0.2):
     non_explicit_videos = list()
     #non_explicit_videos = glob.glob(os.path.join(root_dir,'non_explicit/*'))
     for video in non_explicit_videos_before_filtering:
-        if len(glob.glob(os.path.join(video, 'video_encs/*')))!=0:
+        if len(glob.glob(os.path.join(video, 'audio_encs/*')))!=0:
             non_explicit_videos.append(video)
 
     non_explicit_indices = list(range(len(non_explicit_videos)))
@@ -87,10 +87,16 @@ def train_val(**train_val_arg_dict):
 
         for i, modality_inputs in enumerate(train_dataloader):
             _, transformed_video, processed_speech, spectrogram, target = modality_inputs
+            #_, transformed_video, target = modality_inputs
+            #_, processed_speech, target = modality_inputs
+            #_, spectrogram, target = modality_inputs
             target = target.to(device)
 
             optimizer.zero_grad()
             predictions = unifiedmodel_obj(processed_speech, transformed_video, spectrogram)
+            #predictions = unifiedmodel_obj(transformed_video)
+            #predictions = unifiedmodel_obj(processed_speech)
+            #predictions = unifiedmodel_obj(spectrogram)
             batch_loss = loss_(predictions, target)
             batch_loss.backward()
             optimizer.step()
@@ -127,9 +133,15 @@ def train_val(**train_val_arg_dict):
         for i, modality_inputs in enumerate(val_dataloader):
             with torch.no_grad():
                 _, transformed_video, processed_speech,spectrogram, target = modality_inputs
+                #_, transformed_video, target = modality_inputs
+                #_, processed_speech, target = modality_inputs
+                #_, spectrogram, target = modality_inputs
                 target = target.to(device)
 
                 predictions = unifiedmodel_obj(processed_speech, transformed_video, spectrogram)
+                #predictions = unifiedmodel_obj(transformed_video)
+                #predictions = unifiedmodel_obj(processed_speech)
+                #predictions = unifiedmodel_obj(spectrogram)
                 batch_loss = loss_(predictions, target)
                 pred_softmax = softmax(predictions)
                 pred_softmax = torch.argmax(pred_softmax, dim=1)
@@ -206,6 +218,9 @@ if __name__=='__main__':
     in_dims = 600
     intermediate_dims = 50
     UnifiedModel_obj = UnifiedModel(in_dims, intermediate_dims, LanguageModel_obj, VideoModel_obj, SpectrogramModel_obj).to(device)
+    #UnifiedModel_obj = UnifiedModel(in_dims, intermediate_dims, VideoModel_obj).to(device)
+    #UnifiedModel_obj = UnifiedModel(in_dims, intermediate_dims, LanguageModel_obj).to(device)
+    #UnifiedModel_obj = UnifiedModel(in_dims, intermediate_dims, SpectrogramModel_obj).to(device)
 
 
     if optimizer_name in ['SGD','sgd']:
