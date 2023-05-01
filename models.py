@@ -61,6 +61,9 @@ class LanguageModel(nn.Module):
         if not self.demo:
             tokenized_text['input_ids'] = tokenized_text['input_ids'].squeeze(0)
             tokenized_text['attention_mask'] = tokenized_text['attention_mask'].squeeze(0)
+        #print('\n', tokenized_text['input_ids'].size())
+        tokenized_text['input_ids'] = tokenized_text['input_ids'][:, :512]
+        tokenized_text['attention_mask'] = tokenized_text['attention_mask'][:, :512]
 
         x = self.model(**tokenized_text).logits
         return x

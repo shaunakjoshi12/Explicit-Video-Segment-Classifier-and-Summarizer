@@ -1,4 +1,5 @@
 import os
+import pdb
 import glob
 import math
 import torch
@@ -52,8 +53,11 @@ def divide_video(video_path, EncodeVideo_obj, UnifiedModel_obj, TokenizeText_obj
         segment_clip = video_clip.subclip(start_time, end_time)
         path = os.path.join(save_dir_path, output_file.split('/')[-1].replace('.mp4', '_{}.mp4'.format(0)))
         segment_clip.write_videofile(path)
-        segment_clip.close()
+        #segment_clip.close()
         processed_video = [elem.to(device) for elem in EncodeVideo_obj.get_video(path)]
+        os.remove(segment_clip_path)
+        os.system('rm -rf *.mp*')
+
         with torch.no_grad():
             processed_speech = TokenizeText_obj.tokenize(GetTextFromAudio_obj.get_speech(path))
             processed_speech = {key:processed_speech[key].to(device) for key in processed_speech}
@@ -70,10 +74,16 @@ def divide_video(video_path, EncodeVideo_obj, UnifiedModel_obj, TokenizeText_obj
             
             start_time = chunk*60
             end_time = start_time + 60
+            #pdb.set_trace()
             segment_clip = video_clip.subclip(start_time, end_time)
+#            try:
             segment_clip.write_videofile(segment_clip_path)
-            segment_clip.close()
+            # except:
+            #     pdb.set_trace()
+            #segment_clip.close()
             processed_video = [elem.to(device) for elem in EncodeVideo_obj.get_video(segment_clip_path)]
+            os.remove(segment_clip_path)
+            os.system('rm -rf *.mp*')
             with torch.no_grad():
                 processed_speech = TokenizeText_obj.tokenize(GetTextFromAudio_obj.get_speech(video_path))
                 processed_speech = {key:processed_speech[key].to(device) for key in processed_speech}
@@ -81,8 +91,8 @@ def divide_video(video_path, EncodeVideo_obj, UnifiedModel_obj, TokenizeText_obj
                 predictions = UnifiedModel_obj(processed_speech, processed_video, processed_spectro)
                 pred_softmax = softmax(predictions)
                 pred_softmax = torch.argmax(pred_softmax, dim=1).cpu().item()
-                print('The predicted class is :{}'.format(classes_reverse_map[pred_softmax]))            
-
+                print('The predicted class is :{} for time segment:{} to {}'.format(classes_reverse_map[pred_softmax], start_time, end_time))
+        pdb.set_trace()
         #for chunk in tqdm(range(num_chunks_trail)):
         if num_chunks_trail!=0:
             start_time = end_time
@@ -93,8 +103,11 @@ def divide_video(video_path, EncodeVideo_obj, UnifiedModel_obj, TokenizeText_obj
             end_time = start_time + 60
             segment_clip = video_clip.subclip(start_time, end_time)
             segment_clip.write_videofile(segment_clip_path)
-            segment_clip.close()
+            #segment_clip.close()
             processed_video = [elem.to(device) for elem in EncodeVideo_obj.get_video(segment_clip_path)]
+            os.remove(segment_clip_path)
+            os.system('rm -rf *.mp*')
+            
             with torch.no_grad():
                 processed_speech = TokenizeText_obj.tokenize(GetTextFromAudio_obj.get_speech(video_path))
                 processed_speech = {key:processed_speech[key].to(device) for key in processed_speech}
@@ -102,7 +115,7 @@ def divide_video(video_path, EncodeVideo_obj, UnifiedModel_obj, TokenizeText_obj
                 predictions = UnifiedModel_obj(processed_speech, processed_video, processed_spectro)
                 pred_softmax = softmax(predictions)
                 pred_softmax = torch.argmax(pred_softmax, dim=1).cpu().item()
-                print('The predicted class is :{}'.format(classes_reverse_map[pred_softmax]))            
+                print('The predicted class is :{} for time segment:{} to {}'.format(classes_reverse_map[pred_softmax], start_time, end_time))
 
 
     shutil.rmtree(save_dir_path)
