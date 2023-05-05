@@ -19,7 +19,7 @@ In this project our objective is to take a video and extract the smaller segment
         (mp4 files obtained from concatenating smaller video clips. Used during demo)
 
 To install create a conda environment of python version 3.10.0 strictly
-Install whisper strictly use 'pip install git+https://github.com/openai/whisper.git'
+Install whisper strictly use `pip install git+https://github.com/openai/whisper.git`
 Then run `pip install -r requirements.txt`
 
 Below is the diagram of our pipeline
