@@ -8,12 +8,16 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 import torch.nn as nn
+from summarizer import summarize
 from models import VideoModel
 from video_utils import EncodeVideo
 from moviepy.editor import VideoFileClip
 from audio_utils import GetSpectrogramFromAudio
 from text_utils import GetTextFromAudio, TokenizeText
 from models import LanguageModel, UnifiedModel, SpectrogramModel
+from transformers import AutoProcessor, AutoModelForCausalLM
+processor = AutoProcessor.from_pretrained("microsoft/git-large-vatex")
+model = AutoModelForCausalLM.from_pretrained("microsoft/git-large-vatex")
 
 def makedir(dir_):
     if not os.path.exists(dir_):
@@ -53,19 +57,23 @@ def divide_video(video_path, EncodeVideo_obj, UnifiedModel_obj, TokenizeText_obj
         segment_clip = video_clip.subclip(start_time, end_time)
         path = os.path.join(save_dir_path, output_file.split('/')[-1].replace('.mp4', '_{}.mp4'.format(0)))
         segment_clip.write_videofile(path)
-        #segment_clip.close()
         processed_video = [elem.to(device) for elem in EncodeVideo_obj.get_video(path)]
-        os.remove(segment_clip_path)
-        os.system('rm -rf *.mp*')
 
         with torch.no_grad():
             processed_speech = TokenizeText_obj.tokenize(GetTextFromAudio_obj.get_speech(path))
             processed_speech = {key:processed_speech[key].to(device) for key in processed_speech}
-            processed_spectro = torch.from_numpy(GetSpectrogramFromAudio_obj.get_spectrogram(video_path)).to(device)
+            #processed_spectro = torch.from_numpy(GetSpectrogramFromAudio_obj.get_spectrogram(video_path)).to(device)
+            processed_spectro = torch.from_numpy(GetSpectrogramFromAudio_obj.get_spectrogram(path)).to(device)
             predictions = UnifiedModel_obj(processed_speech, processed_video, processed_spectro)
             pred_softmax = softmax(predictions)
             pred_softmax = torch.argmax(pred_softmax, dim=1).cpu().item()
             print('The predicted class is :{}'.format(classes_reverse_map[pred_softmax]))
+            if classes_reverse_map[pred_softmax]=='explicit':
+                summarized_string = summarize(path, model, processor, device)
+                print('The summary is :{}'.format(summarized_string))
+
+        os.remove(path)
+        os.system('rm -rf *.mp*')
 
 
     else:
@@ -82,40 +90,50 @@ def divide_video(video_path, EncodeVideo_obj, UnifiedModel_obj, TokenizeText_obj
             #     pdb.set_trace()
             #segment_clip.close()
             processed_video = [elem.to(device) for elem in EncodeVideo_obj.get_video(segment_clip_path)]
-            os.remove(segment_clip_path)
-            os.system('rm -rf *.mp*')
             with torch.no_grad():
-                processed_speech = TokenizeText_obj.tokenize(GetTextFromAudio_obj.get_speech(video_path))
+                #processed_speech = TokenizeText_obj.tokenize(GetTextFromAudio_obj.get_speech(video_path))
+                processed_speech = TokenizeText_obj.tokenize(GetTextFromAudio_obj.get_speech(segment_clip_path))
                 processed_speech = {key:processed_speech[key].to(device) for key in processed_speech}
-                processed_spectro = torch.from_numpy(GetSpectrogramFromAudio_obj.get_spectrogram(video_path)).to(device)
+                #processed_spectro = torch.from_numpy(GetSpectrogramFromAudio_obj.get_spectrogram(video_path)).to(device)
+                processed_spectro = torch.from_numpy(GetSpectrogramFromAudio_obj.get_spectrogram(segment_clip_path)).to(device)
                 predictions = UnifiedModel_obj(processed_speech, processed_video, processed_spectro)
                 pred_softmax = softmax(predictions)
                 pred_softmax = torch.argmax(pred_softmax, dim=1).cpu().item()
                 print('The predicted class is :{} for time segment:{} to {}'.format(classes_reverse_map[pred_softmax], start_time, end_time))
-        pdb.set_trace()
+                if classes_reverse_map[pred_softmax]=='explicit':
+                    summarized_string = summarize(segment_clip_path, model, processor, device)
+                    print('The summary is :{}'.format(summarized_string))
+
+            os.remove(segment_clip_path)
+            os.system('rm -rf *.mp*')
+
         #for chunk in tqdm(range(num_chunks_trail)):
         if num_chunks_trail!=0:
             start_time = end_time
             end_time = start_time + num_chunks_trail
             segment_clip_path = os.path.join(save_dir_path, output_file.split('/')[-1].replace('.mp4', '_{}.mp4'.format(chunk)))
             
-            start_time = chunk*60
-            end_time = start_time + 60
             segment_clip = video_clip.subclip(start_time, end_time)
             segment_clip.write_videofile(segment_clip_path)
             #segment_clip.close()
             processed_video = [elem.to(device) for elem in EncodeVideo_obj.get_video(segment_clip_path)]
-            os.remove(segment_clip_path)
-            os.system('rm -rf *.mp*')
             
             with torch.no_grad():
-                processed_speech = TokenizeText_obj.tokenize(GetTextFromAudio_obj.get_speech(video_path))
+                #processed_speech = TokenizeText_obj.tokenize(GetTextFromAudio_obj.get_speech(video_path))
+                processed_speech = TokenizeText_obj.tokenize(GetTextFromAudio_obj.get_speech(segment_clip_path))
                 processed_speech = {key:processed_speech[key].to(device) for key in processed_speech}
-                processed_spectro = torch.from_numpy(GetSpectrogramFromAudio_obj.get_spectrogram(video_path)).to(device)
+                #processed_spectro = torch.from_numpy(GetSpectrogramFromAudio_obj.get_spectrogram(video_path)).to(device)
+                processed_spectro = torch.from_numpy(GetSpectrogramFromAudio_obj.get_spectrogram(segment_clip_path)).to(device)
                 predictions = UnifiedModel_obj(processed_speech, processed_video, processed_spectro)
                 pred_softmax = softmax(predictions)
                 pred_softmax = torch.argmax(pred_softmax, dim=1).cpu().item()
                 print('The predicted class is :{} for time segment:{} to {}'.format(classes_reverse_map[pred_softmax], start_time, end_time))
+                if classes_reverse_map[pred_softmax]=='explicit':
+                    summarized_string = summarize(segment_clip_path, model, processor, device)
+                    print('The summary is :{}'.format(summarized_string))
+
+            os.remove(segment_clip_path)
+            os.system('rm -rf *.mp*')
 
 
     shutil.rmtree(save_dir_path)
@@ -138,7 +156,7 @@ def inference(stitched_videos_path, classes_reverse_map, checkpoint_path, experi
     GetSpectrogramFromAudio_obj = GetSpectrogramFromAudio()
     TokenizeText_obj = TokenizeText()    
 
-    videos = glob.glob(os.path.join(stitched_videos_path, '*/*'))
+    videos = glob.glob(os.path.join(stitched_videos_path, 'Lord.of.War/*'))
     for video_path in videos:
         print('For video :{}'.format(video_path))
         divide_video(video_path, EncodeVideo_obj, UnifiedModel_obj, TokenizeText_obj, GetSpectrogramFromAudio_obj, GetTextFromAudio_obj, classes_reverse_map, device)
